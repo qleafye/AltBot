@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-bot
+  template:
+    metadata:
+      labels:
+        app: telegram-bot
+    spec:
+      containers:
+        - name: bot
+          image: <IMAGE-BOT>
+          env:
+            - name: API_URL
+              value: "http://parser.telegram-bot.svc.cluster.local:8000/parse"
+            - name: BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-api-test-key
+                  key: API_KEY
+            - name: REDIS_HOST
+              value: "redis.kafka.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"

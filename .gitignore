@@ -1,0 +1,19 @@
+# Ignore Python cache and logs
+__pycache__/
+*.pyc
+*.pyo
+*.log
+
+# Ignore environment and secrets
+.env
+.env.*
+shared/currency_rates.json
+backup.sql
+*.sqlite3
+
+# Ignore Docker/IDE files
+*.swp
+*.swo
+*.DS_Store
+.vscode/
+.idea/

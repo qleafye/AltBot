@@ -1,0 +1,88 @@
+services:
+  # База данных PostgreSQL
+  postgres:
+    build: ./postgres
+    container_name: bot_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: test123
+      POSTGRES_DB: parserdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bot_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d parserdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Парсер (FastAPI)
+  parser:
+    build: ./parser
+    container_name: bot_parser
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=admin
+      - DB_PASSWORD=test123
+      - DB_NAME=parserdb
+      - HTTP_PROXY=http://2a98AJ:f2nUUQ@45.146.183.158:8000
+      - HTTPS_PROXY=http://2a98AJ:f2nUUQ@45.146.183.158:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bot_network
+    restart: unless-stopped
+
+  # Пользовательский бот
+  user_bot:
+    build: ./user_bot
+    container_name: bot_user
+    environment:
+      - BOT_TOKEN=${USER_BOT_TOKEN}
+      - API_URL=http://parser:8000/parse
+    depends_on:
+      - parser
+      - postgres
+    networks:
+      - bot_network
+    restart: unless-stopped
+    volumes:
+      - ./user_bot:/app/user_bot
+      - ./shared:/app/shared
+
+  # Админский бот
+  admin_bot:
+    build: ./admin_bot
+    container_name: bot_admin
+    environment:
+      - BOT_TOKEN=${ADMIN_BOT_TOKEN}
+      - USER_BOT_TOKEN=${USER_BOT_TOKEN}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
+      - ADMIN_NOTIFY_ID=${ADMIN_NOTIFY_ID}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=admin
+      - DB_PASSWORD=test123
+      - DB_NAME=parserdb
+    depends_on:
+      - postgres
+    networks:
+      - bot_network
+    restart: unless-stopped
+    volumes:
+      - ./admin_bot:/app/admin_bot
+      - ./shared:/app/shared
+
+networks:
+  bot_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
