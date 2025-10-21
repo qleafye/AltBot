@@ -51,7 +51,7 @@ check_bot_token(BOT_TOKEN)
 def get_main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton("🛍 Рассчитать стоимость товара по ссылке"), KeyboardButton("💱 Рассчитать цену вручную")],
+            [KeyboardButton("🛍 Рассчитать цену по ссылке"), KeyboardButton("💱 Рассчитать цену вручную")],
             [KeyboardButton("📢 Канал"), KeyboardButton("💬 Отзывы")],
             [KeyboardButton("👤 Поддержка"), KeyboardButton("🛡 Проверенные сайты")]
         ],
@@ -75,8 +75,51 @@ def is_url(text: str) -> bool:
 # Проверка, является ли текст ценой (например, $100, 100 USD, 12000 руб.)
 def is_price(text: str) -> bool:
     # Примеры: $100, 100 USD, 12000 руб., 1000, 1000 RUB
-    price_pattern = re.compile(r"(\$|€|¥|£|USD|EUR|GBP|JPY|CNY|元|руб|RUB)?\s*([\d.,]+)\s*(\$|€|¥|£|USD|EUR|GBP|JPY|CNY|元|руб|RUB)?", re.IGNORECASE)
+    price_pattern = re.compile(r"(\$|€|£|USD|EUR|GBP|CNY|元|руб|RUB)?\s*([\d.,]+)\s*(\$|€|£|USD|EUR|GBP|CNY|元|руб|RUB)?", re.IGNORECASE)
     return bool(price_pattern.fullmatch(text.strip()))
+
+
+def calculate_price(text: str) -> str:
+    """Рассчитать цену в рублях из строки с ценой и валютой, добавить эмодзи валюты."""
+    # Ищем валюту и сумму (например: $100, 100 USD, €50, 12000 RUB)
+    m = re.search(r"(\$|€|¥|£|USD|EUR|GBP|JPY|CNY|元|руб|RUB)?\s*([\d.,]+)\s*(\$|€|¥|£|USD|EUR|GBP|JPY|CNY|元|руб|RUB)?", text.strip(), re.IGNORECASE)
+    if not m:
+        return "Не удалось распознать цену. Попробуйте, например: $100, 100 USD или 1000."
+    cur1, amount_str, cur2 = m.group(1), m.group(2), m.group(3)
+    currency = (cur1 or cur2 or "USD").upper()
+    # Нормализуем русские обозначения рубля
+    if currency in {"РУБ", "RUB"}:
+        currency = "RUB"
+    amount = None
+    try:
+        amount = float(amount_str.replace(",", "."))
+    except ValueError:
+        return "Не удалось распознать сумму. Введите число, например: 99.99"
+
+    rates = load_currency_rates()
+    # Поддерживаем как коды, так и символы валют
+    rate = rates.get(currency)
+    if rate is None:
+        # Попробуем символы валют
+        symbol_map = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CNY": "元", "RUB": None}
+        sym = symbol_map.get(currency)
+        if sym:
+            rate = rates.get(sym)
+    if rate is None:
+        # По умолчанию считаем как USD
+        rate = rates.get("USD", 1)
+        currency = "USD"
+
+    commission = max(amount * 0.15, 15)
+    rub_price = round((amount + commission) * rate)
+
+    emoji_map = {"USD": "💵", "EUR": "💶", "GBP": "💷", "JPY": "💴", "CNY": "🧧", "$": "💵", "€": "💶", "£": "💷", "¥": "💴", "元": "🧧", "RUB": ""}
+    emoji = emoji_map.get(currency, "")
+    return (
+        f"Цена ≈ {rub_price} ₽\n"
+        f"(введено: {amount} {currency} {emoji})\n"
+        f"Стоимость доставки рассчитывается отдельно."
+    )
 
 
 CURR_PATH = "/app/shared/currency_rates.json"
@@ -84,7 +127,6 @@ DEFAULT_RATES = {
     "$": 82, "USD": 82,
     "€": 90, "EUR": 90,
     "£": 115, "GBP": 115,
-    "¥": 0.6, "JPY": 0.6,
     "CNY": 12.5, "元": 12.5
 }
 
@@ -94,7 +136,7 @@ def load_currency_rates():
         "$": "USD",
         "€": "EUR",
         "£": "GBP",
-        "¥": "JPY",
+    # "¥": "JPY",  # JPY удалена из поддерживаемых валют
         "元": "CNY"
     }
     try:
@@ -126,7 +168,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["_welcomed"] = True
         return ConversationHandler.END
 
-    if text == "🛍 Рассчитать стоимость товара по ссылке":
+    if text == "🛍 Рассчитать цену по ссылке":
         await update.message.reply_text(
             "Отправьте ссылку на товар.",
             reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 В меню")]], resize_keyboard=True)
@@ -136,8 +178,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "💱 Рассчитать цену вручную":
         # Переход к выбору валюты
         currency_buttons = [
-            [KeyboardButton("USD"), KeyboardButton("EUR"), KeyboardButton("GBP")],
-            [KeyboardButton("JPY"), KeyboardButton("CNY")],
+            [KeyboardButton("USD 💵"), KeyboardButton("EUR 💶"), KeyboardButton("GBP 💷")],
+            [KeyboardButton("CNY 🧧")],
             [KeyboardButton("🔙 В меню")]
         ]
         await update.message.reply_text(
@@ -171,12 +213,25 @@ async def handle_select_currency(update: Update, context: ContextTypes.DEFAULT_T
     if text == "🔙 В МЕНЮ":
         await update.message.reply_text("Вы вернулись в главное меню.", reply_markup=get_main_menu())
         return ConversationHandler.END
-    allowed = {"USD", "EUR", "GBP", "JPY", "CNY"}
-    if text not in allowed:
+    # Убираем эмодзи из текста и принимаем только валюные коды
+    clean = (
+        text.replace("💵", "")
+            .replace("💶", "")
+            .replace("💷", "")
+            .replace("💴", "")
+            .replace("🧧", "")
+            .strip()
+    )
+    allowed = {"USD", "EUR", "GBP", "CNY"}
+    if clean not in allowed:
         await update.message.reply_text("Пожалуйста, выберите валюту из списка.")
         return SELECT_CURRENCY
-    context.user_data['manual_currency'] = text
-    await update.message.reply_text(f"Введите сумму в {text}:", reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 В меню")]], resize_keyboard=True))
+    context.user_data['manual_currency'] = clean
+    emoji_map = {"USD":"💵","EUR":"💶","GBP":"💷","CNY":"🧧"}
+    await update.message.reply_text(
+        f"Введите сумму в {clean} {emoji_map.get(clean,'')}",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 В меню")]], resize_keyboard=True)
+    )
     return ENTER_AMOUNT
 
 # Обработка ввода суммы
@@ -196,8 +251,13 @@ async def handle_enter_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
     commission = max(amount * 0.15, 15)
     total = amount + commission
     rub_price = round(total * rate)
+    emoji_map = {"USD":"💵","EUR":"💶","GBP":"💷","CNY":"🧧"}
     await update.message.reply_text(
-        f"Цена ≈ {rub_price} руб.\n(введено: {amount} {currency})"
+        f"Цена ≈ {rub_price} ₽\n(введено: {amount} {currency} {emoji_map.get(currency,'')})\n"
+        f"Стоимость доставки рассчитывается отдельно."
+    )
+    await update.message.reply_text(
+        "Для оформления заказа и уточнения деталей перешлите сообщение менеджеру https://t.me/sytnixxstore"
     )
     await update.message.reply_text("Вы вернулись в главное меню.", reply_markup=get_main_menu())
     return ConversationHandler.END
@@ -240,7 +300,7 @@ async def handle_order_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Конвертация валют с учетом комиссии (теперь используем актуальные курсы)
             CURRENCY_RATES = load_currency_rates()
             if isinstance(price, str):
-                match = re.search(r"(€|\$|¥|£|USD|EUR|GBP|JPY|CNY|元)\s*([\d.,]+)", price.upper())
+                match = re.search(r"(€|\$|£|USD|EUR|GBP|CNY|元)\s*([\d.,]+)", price.upper())
                 if match:
                     currency = match.group(1)
                     amount_str = match.group(2).replace(",", ".")
@@ -251,10 +311,23 @@ async def handle_order_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         rate = CURRENCY_RATES.get(currency)
                         if rate:
                             rub_price = round(total * rate)
-                            price = f"≈ {rub_price} руб."
+                            price = f"≈ {rub_price} ₽"
                     except ValueError:
                         logger.warning(f"Не удалось разобрать цену: {price}")
-            await update.message.reply_text(f"Название: {name}\nСсылка: {text}\nЦена: {price}\nДля оформления заказа и уточнения деталей перешлите сообщение менеджеру https://t.me/rusalemngr")
+            # Покажем эмодзи валюты, если распознали
+            if isinstance(price, str):
+                m = re.search(r"(€|\$|£|USD|EUR|GBP|CNY|元)", price.upper())
+                cur = m.group(1) if m else ""
+                emoji_map = {"USD":"💵","EUR":"💶","GBP":"💷","CNY":"🧧","$":"💵","€":"💶","£":"💷","元":"🧧"}
+                emoji = emoji_map.get(cur, "")
+                price = f"{price} {emoji}".strip()
+            await update.message.reply_text(
+                f"Название: {name}\n"
+                f"Ссылка: {text}\n"
+                f"Цена: {price}\n"
+                f"Стоимость доставки рассчитывается отдельно.\n"
+                f"Для оформления заказа и уточнения деталей перешлите сообщение менеджеру https://t.me/sytnixxstore"
+            )
             await update.message.reply_text("Вы вернулись в главное меню.", reply_markup=get_main_menu())
             return ConversationHandler.END
         except requests.RequestException as e:

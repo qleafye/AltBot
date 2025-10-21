@@ -77,7 +77,7 @@ services:
       - bot_network
     restart: unless-stopped
     volumes:
-      - ./admin_bot:/app/admin_bot
+      - ./admin_bot:/app
       - ./shared:/app/shared
 
 networks:

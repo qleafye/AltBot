@@ -11,33 +11,14 @@ class ProductParser:
         self.url = url
         self.timeout = timeout
         self.ua = UserAgent()
-        # Расширенные заголовки для имитации браузера
-        self.headers = {
-            'User-Agent': self.ua.chrome,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-            'Cache-Control': 'max-age=0',
-            # 'Referer': 'https://www.google.com/' # Можно добавить при необходимости
-        }
+        self.headers = {'User-Agent': self.ua.random}
         self.soup = None
         self.product_name = None
         self.product_price = None
-        self.session = requests.Session()  # Для поддержки cookies и сессии
-        # Прокси поддерживаются через переменные окружения HTTP_PROXY/HTTPS_PROXY
-        # Например: export HTTP_PROXY="http://user:pass@host:port"
 
     def fetch_page(self):
         try:
-            # requests автоматически использует HTTP_PROXY/HTTPS_PROXY из окружения
-            # Используем сессию для поддержки cookies
-            response = self.session.get(self.url, headers=self.headers, timeout=self.timeout)
+            response = requests.get(self.url, headers=self.headers, timeout=self.timeout)
             response.raise_for_status()
             self.soup = BeautifulSoup(response.text, 'html.parser')
         except requests.exceptions.HTTPError as http_err:

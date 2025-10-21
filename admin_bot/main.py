@@ -13,6 +13,7 @@ import os
 import sys
 from os import execl
 import asyncio
+import threading
 import asyncpg
 from typing import Dict, Any
 import json
@@ -42,8 +43,8 @@ DB_CONFIG = {
 # состояния бота при /retranslate
 GET_TEXT, GET_PHOTO_URL, CONFIRM_SEND = range(3)
 
-# Глобальная переменная для списка разрешенных пользователей
-ALLOWED_USER_IDS: set[int] = set()
+# Глобальные переменные
+ALLOWED_USER_IDS: set[int] = set()  # список разрешенных пользователей
 
 # Функция для загрузки разрешенных пользователей
 def load_allowed_users() -> set[int]:
@@ -77,7 +78,6 @@ DEFAULT_RATES = {
     "USD": 82,
     "EUR": 90,
     "GBP": 115,
-    "JPY": 0.6,
     "CNY": 12.5,
    
 }
@@ -104,11 +104,22 @@ def save_currency_rates(rates):
 # --- Conversation для изменения курсов ---
 SELECT_CURRENCY, ENTER_NEW_RATE = range(100, 102)
 
+def _currency_emoji(code: str) -> str:
+    mapping = {
+        "USD": "💵",
+        "EUR": "💶",
+        "GBP": "💷",
+        "CNY": "🧧",
+    }
+    return mapping.get(code.upper(), "")
+
 async def currency_menu(update: Update, context: CallbackContext) -> int:
     rates = load_currency_rates()
-    msg = "Текущие курсы валют (1 единица в рублях):\n"
+    msg = "Текущие курсы валют (1 единица в ₽):\n"
     for k, v in rates.items():
-        msg += f"{k}: {v}\n"
+        emoji = _currency_emoji(k)
+        suffix = f" {emoji}" if emoji else ""
+        msg += f"{k}{suffix}: {v} ₽\n"
     msg += "\nВыберите валюту для изменения:"
     buttons = [[KeyboardButton(k)] for k in rates.keys()]
     buttons.append([KeyboardButton("🔙 В меню")])
@@ -125,7 +136,11 @@ async def select_currency(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("Пожалуйста, выберите валюту из списка.")
         return SELECT_CURRENCY
     context.user_data['currency_to_edit'] = currency
-    await update.message.reply_text(f"Введите новый курс для {currency} (текущее значение: {rates[currency]}):", reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 В меню")]], resize_keyboard=True))
+    emoji = _currency_emoji(currency)
+    await update.message.reply_text(
+        f"Введите новый курс для {currency} {emoji} (текущее значение: {rates[currency]} ₽):",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 В меню")]], resize_keyboard=True)
+    )
     return ENTER_NEW_RATE
 
 async def enter_new_rate(update: Update, context: CallbackContext) -> int:
@@ -139,7 +154,11 @@ async def enter_new_rate(update: Update, context: CallbackContext) -> int:
         rates = load_currency_rates()
         rates[currency] = new_rate
         save_currency_rates(rates)
-        await update.message.reply_text(f"Курс для {currency} обновлён: {new_rate}", reply_markup=get_admin_menu())
+        emoji = _currency_emoji(currency)
+        await update.message.reply_text(
+            f"Курс для {currency} {emoji} обновлён: {new_rate} ₽",
+            reply_markup=get_admin_menu()
+        )
         return ConversationHandler.END
     except Exception:
         await update.message.reply_text("Пожалуйста, введите корректное число.")
@@ -354,21 +373,16 @@ async def confirm_send(update: Update, context: CallbackContext) -> int:
             f"✅ Рассылка завершена!\n\n"
             f"📤 Успешно отправлено: {success}\n"
             f"❌ Ошибок: {failed}\n\n"
-            "🔄 Приложение перезапускается..."
+            "🔄 Контейнер будет перезапущен..."
         )
-        
-        await asyncio.sleep(2)
-        
-        # Отправляем главное меню перед перезапуском
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="Бот перезапущен. Возвращайтесь в главное меню:",
-            reply_markup=get_admin_menu()
-        )
-        
-        application = context.application
-        await application.stop()
-        execl(sys.executable, sys.executable, *sys.argv)
+        # Останавливаем приложение, чтобы polling прекратился
+        await context.application.stop()
+        logger.info("Запланировано завершение процесса через 1с для авто-перезапуска контейнера")
+        # Самый надёжный способ в Docker: завершить процесс —
+        # docker-compose с policy 'restart: unless-stopped' перезапустит контейнер.
+        # Используем отдельный поток, чтобы выход гарантированно случился
+        # даже если asyncio loop уже остановлен.
+        threading.Timer(1.0, lambda: os._exit(0)).start()
         
     except Exception as e:
         logger.error(f"Ошибка рассылки: {e}")
@@ -506,7 +520,8 @@ def setup_handlers(application: Application) -> None:
 import asyncio
 
 # ID пользователя, которому слать напоминание (можно указать свой Telegram ID)
-ADMIN_NOTIFY_ID = int(os.getenv("ADMIN_NOTIFY_ID"))  # 0 = не отправлять
+# 0 = не отправлять. Делаем разбор безопасным при отсутствии переменной.
+ADMIN_NOTIFY_ID = int(os.getenv("ADMIN_NOTIFY_ID", "0") or "0")
 
 
 async def daily_reminder_task(app: Application):
@@ -566,4 +581,4 @@ if __name__ == '__main__':
     setup_handlers(app)
 
     logger.info("Бот запущен и ожидает сообщений...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
