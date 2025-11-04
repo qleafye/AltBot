@@ -1,34 +1,33 @@
+version: "3.8"
+
 services:
-  # База данных PostgreSQL
   postgres:
-    build: ./postgres
-    container_name: bot_postgres
+    image: postgres:15-alpine
+    container_name: altbot_postgres
     environment:
-      POSTGRES_USER: admin
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: parserdb
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-parserdb}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - bot_network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d parserdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-parserdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Парсер (FastAPI)
   parser:
     build: ./parser
-    container_name: bot_parser
+    container_name: altbot_parser
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USER=admin
+      - DB_USER=${DB_USER:-admin}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_NAME=parserdb
+      - DB_NAME=${POSTGRES_DB:-parserdb}
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
     ports:
@@ -40,27 +39,21 @@ services:
       - bot_network
     restart: unless-stopped
 
-  # Пользовательский бот
   user_bot:
     build: ./user_bot
-    container_name: bot_user
+    container_name: altbot_user
     environment:
       - BOT_TOKEN=${USER_BOT_TOKEN}
       - API_URL=http://parser:8000/parse
     depends_on:
       - parser
-      - postgres
     networks:
       - bot_network
     restart: unless-stopped
-    volumes:
-      - ./user_bot:/app/user_bot
-      - ./shared:/app/shared
 
-  # Админский бот
   admin_bot:
     build: ./admin_bot
-    container_name: bot_admin
+    container_name: altbot_admin
     environment:
       - BOT_TOKEN=${ADMIN_BOT_TOKEN}
       - USER_BOT_TOKEN=${USER_BOT_TOKEN}
@@ -68,17 +61,14 @@ services:
       - ADMIN_NOTIFY_ID=${ADMIN_NOTIFY_ID}
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USER=admin
+      - DB_USER=${DB_USER:-admin}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_NAME=parserdb
+      - DB_NAME=${POSTGRES_DB:-parserdb}
     depends_on:
       - postgres
     networks:
       - bot_network
     restart: unless-stopped
-    volumes:
-      - ./admin_bot:/app
-      - ./shared:/app/shared
 
 networks:
   bot_network:
