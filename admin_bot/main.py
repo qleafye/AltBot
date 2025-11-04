@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 
 # Конфигурация БД
 DB_CONFIG = {
-    "user": "admin",
-    "password": "test123",
-    "database": "parserdb",
-    "host": "postgres",
-    "port": "5432"
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT")
 }
 # состояния бота при /retranslate
 GET_TEXT, GET_PHOTO_URL, CONFIRM_SEND = range(3)
@@ -555,7 +555,8 @@ async def on_startup(app: Application):
     if ADMIN_NOTIFY_ID:
         app.create_task(daily_reminder_task(app))
 
-if __name__ == '__main__':
+def main():
+    global ALLOWED_USER_IDS
     # Загружаем список разрешенных пользователей при старте
     ALLOWED_USER_IDS = load_allowed_users()
 
@@ -582,3 +583,18 @@ if __name__ == '__main__':
 
     logger.info("Бот запущен и ожидает сообщений...")
     app.run_polling(drop_pending_updates=True)
+
+if __name__ == '__main__':
+    # --- DEBUG: Print all environment variables ---
+    print("--- Отладка переменных окружения ---")
+    for key, value in os.environ.items():
+        if key.startswith("DB_") or key in ["BOT_TOKEN", "ALLOWED_USER_IDS", "POSTGRES_PASSWORD"]:
+            print(f"{key}: {value}")
+    print("------------------------------------")
+    # --- END DEBUG ---
+
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Ошибка при запуске приложения: {e}")
+        sys.exit(1)
