@@ -1,6 +1,8 @@
+# docker-compose.prod.yml
+
 services:
   postgres:
-    image: postgres:15-alpine
+    build: ./postgres # <--- ИСПРАВЛЕНО
     container_name: altbot_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
