@@ -314,6 +314,12 @@ async def skip_photo(update: Update, context: CallbackContext) -> int:
     )
     return CONFIRM_SEND
 
+async def shutdown_and_exit(application: Application):
+    """Корректно останавливает приложение."""
+    logger.info("Корректное завершение работы для перезапуска...")
+    await application.shutdown()
+    logger.info("Приложение остановлено, процесс завершится и будет перезапущен Docker.")
+
 async def confirm_send(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
