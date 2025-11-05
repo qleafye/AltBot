@@ -376,13 +376,9 @@ async def confirm_send(update: Update, context: CallbackContext) -> int:
             "🔄 Контейнер будет перезапущен..."
         )
         # Останавливаем приложение, чтобы polling прекратился
-        await context.application.stop()
-        logger.info("Запланировано завершение процесса через 1с для авто-перезапуска контейнера")
-        # Самый надёжный способ в Docker: завершить процесс —
-        # docker-compose с policy 'restart: unless-stopped' перезапустит контейнер.
-        # Используем отдельный поток, чтобы выход гарантированно случился
-        # даже если asyncio loop уже остановлен.
-        threading.Timer(1.0, lambda: os._exit(0)).start()
+        # await context.application.stop()
+        # threading.Timer(1.0, lambda: os._exit(0)).start()
+        context.application.create_task(shutdown_and_exit(context.application))
         
     except Exception as e:
         logger.error(f"Ошибка рассылки: {e}")
