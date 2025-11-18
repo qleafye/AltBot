@@ -110,8 +110,9 @@ def calculate_price(text: str) -> str:
         rate = rates.get("USD", 1)
         currency = "USD"
 
-    commission = max(amount * 0.15, 15)
-    rub_price = round((amount + commission) * rate)
+    base_price_rub = amount * rate
+    commission_rub = get_commission_rub(base_price_rub)
+    rub_price = round(base_price_rub + commission_rub)
 
     emoji_map = {"USD": "💵", "EUR": "💶", "GBP": "💷", "JPY": "💴", "CNY": "🧧", "$": "💵", "€": "💶", "£": "💷", "¥": "💴", "元": "🧧", "RUB": ""}
     emoji = emoji_map.get(currency, "")
@@ -248,9 +249,9 @@ async def handle_enter_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ENTER_AMOUNT
     CURRENCY_RATES = load_currency_rates()
     rate = CURRENCY_RATES.get(currency, 1)
-    commission = max(amount * 0.15, 15)
-    total = amount + commission
-    rub_price = round(total * rate)
+    base_price_rub = amount * rate
+    commission_rub = get_commission_rub(base_price_rub)
+    rub_price = round(base_price_rub + commission_rub)
     emoji_map = {"USD":"💵","EUR":"💶","GBP":"💷","CNY":"🧧"}
     await update.message.reply_text(
         f"Цена ≈ {rub_price} ₽\n(введено: {amount} {currency} {emoji_map.get(currency,'')})\n"
@@ -306,11 +307,11 @@ async def handle_order_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     amount_str = match.group(2).replace(",", ".")
                     try:
                         amount = float(amount_str)
-                        commission = max(amount * 0.15, 15)
-                        total = amount + commission
                         rate = CURRENCY_RATES.get(currency)
                         if rate:
-                            rub_price = round(total * rate)
+                            base_price_rub = amount * rate
+                            commission_rub = get_commission_rub(base_price_rub)
+                            rub_price = round(base_price_rub + commission_rub)
                             price = f"≈ {rub_price} ₽"
                     except ValueError:
                         logger.warning(f"Не удалось разобрать цену: {price}")
@@ -345,6 +346,18 @@ async def handle_order_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Пожалуйста, отправьте ссылку на товар или цену (например, $100, 100 USD, 12000 руб.), либо нажмите 🔙 В меню.")
     return ORDER_STATE
 
+def get_commission_rub(base_price_rub: float) -> float:
+    """Рассчитывает комиссию в рублях в зависимости от базовой цены товара."""
+    if base_price_rub <= 7000:
+        return 1000.0
+    if base_price_rub <= 15000:
+        return base_price_rub * 0.15
+    if base_price_rub <= 25000:
+        return base_price_rub * 0.13
+    if base_price_rub <= 40000:
+        return base_price_rub * 0.12
+    # свыше 40000
+    return base_price_rub * 0.10
 if __name__ == '__main__':
     print(f"[DEBUG] Running user_bot from: {sys.argv[0]}")
     application = Application.builder().token(BOT_TOKEN).build()
